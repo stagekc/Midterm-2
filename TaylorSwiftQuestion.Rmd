@@ -1,0 +1,185 @@
+---
+title: "Midterm 2 Question 2"
+author: "Kelly Stage"
+date: "2025-11-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidytext)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(ggthemes)
+library(patchwork)
+library(ggwordcloud)
+```
+
+
+```{r}
+lyrics <- read.csv("taylor_swift_genius_data.csv")
+
+Speak_Now <- lyrics %>%
+  filter(Album == "Speak Now")
+
+Reputation <- lyrics %>%
+  filter(Album == "Reputation")
+
+Speak_Now_Words <- Speak_Now %>%
+  unnest_tokens(word, Lyrics) %>%
+  anti_join(stop_words, by = "word")
+
+Reputation_Words <- Reputation %>%
+  unnest_tokens(word, Lyrics) %>%
+  anti_join(stop_words, by = "word")
+```
+
+### Create Word Clouds
+
+```{r}
+Speak_Now_pop_words <- Speak_Now_Words %>%
+  group_by(word) %>%
+  summarize(N=n())
+
+Reputation_pop_words <- Reputation_Words %>%
+  group_by(word) %>%
+  summarize(N=n())
+
+Speak_Now_Cloud<- ggplot(Speak_Now_pop_words, aes(label=word, size = N)) +
+  geom_text_wordcloud() +
+  theme_minimal()
+
+Reputation_Cloud<- ggplot(Reputation_pop_words, aes(label=word, size = N)) +
+  geom_text_wordcloud() +
+  theme_minimal()
+
+```
+
+
+### Sentiments
+
+```{r}
+word_sentiments <- get_sentiments("bing")
+
+Speak_Now_pop_words_sent <- Speak_Now_pop_words %>%
+  group_by(word) %>%
+  summarize(N=n()) %>%
+  arrange(desc(N)) %>%
+  inner_join(word_sentiments, by="word") %>%
+  mutate(album = "Speak Now")
+
+
+Reputation_pop_words_sent <- Reputation_pop_words %>%
+  group_by(word) %>%
+  summarize(N=n()) %>%
+  arrange(desc(N)) %>%
+  inner_join(word_sentiments, by="word") %>%
+  mutate(album = "Reputation")
+
+Album_Join <- rbind(Reputation_pop_words_sent,Speak_Now_pop_words_sent) 
+
+
+Sentiment_Comp <- ggplot(Album_Join) +
+  geom_bar(aes(x=album, fill=sentiment), position="fill") +
+  coord_cartesian(expand=F) +
+  theme_minimal() +
+  labs(title = "Sentiment of Taylor Swift Lyrics",
+       x = "",
+       y = "")
+```
+
+### Spotify Data
+
+```{r}
+metadata <- read.csv("taylor_swift_spotify_data.csv")
+
+metadata_clean <- metadata %>%
+  filter(Album %in% c("Speak Now", "reputation")) %>%
+  select(-Playlist.ID, -URI, -Time.Signature)
+
+metadata_clean <- metadata_clean %>%
+  mutate(
+    Danceability = as.numeric(Danceability),
+    Acousticness = as.numeric(Acousticness)
+  )
+```
+### Speak Now Song Sentiments
+```{r}
+Speak_Now_Words<- Speak_Now_Words %>%
+  inner_join(word_sentiments, by="word")
+
+Speak_Now_Song_Sent<- ggplot(Speak_Now_Words) +
+  geom_bar(aes(x=Song.Name, fill=sentiment), position="fill") +
+  coord_cartesian(expand=F) +
+  theme_minimal() +
+  labs(title = "Sentiment of Speak Now Lyrics",
+       x = "",
+       y = "")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+### Reputation Song Sentiments
+```{r}
+Reputation_Words<- Reputation_Words %>%
+  inner_join(word_sentiments, by="word")
+
+Reputation_Song_Sent<- ggplot(Reputation_Words) +
+  geom_bar(aes(x=Song.Name, fill=sentiment), position="fill") +
+  coord_cartesian(expand=F) +
+  theme_minimal() +
+  labs(title = "Sentiment of Reputation Lyrics",
+       x = "",
+       y = "")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Sentiment vs Dancability vs Acousticness
+
+```{r}
+Album_Sent<-Album_Join %>%
+    group_by(sentiment, album) %>%
+    summarize(N=n())
+#Use album_sent to find ratios
+Reputation_Positive <- 42/88 # 0.477
+Speak_Now_Positive <- 46/89 # 0.516
+
+Speak_Now_meta <- metadata_clean %>%
+  filter(Album == "Speak Now") %>%
+  summarise(dance_avg = mean(Danceability),
+            acoustic_avg = mean(Acousticness)) %>%
+  mutate(positive_sentiment = 0.516) %>%
+  mutate(Album = "Speak Now")
+
+
+Reputation_meta <- metadata_clean %>%
+  filter(Album == "reputation") %>%
+  summarise(dance_avg = mean(Danceability, na.rm = T),
+            acoustic_avg = mean(Acousticness, na.rm = T)) %>%
+  mutate(positive_sentiment = 0.477) %>%
+  mutate(Album = "Reputation")
+
+meta_join <- rbind(Reputation_meta, Speak_Now_meta)
+meta_long <- meta_join %>%
+  pivot_longer(    cols = c(dance_avg, acoustic_avg, positive_sentiment),
+    names_to = "Feature",
+    values_to = "Value")
+
+Compare_Traits<- ggplot(meta_long, aes(x = Feature, y = Value, fill = Album)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Danceability, Acousticness, and Positive Sentiment by Album",
+    x = "",
+    y = ""
+  ) +
+  theme_minimal() 
+```
+
+### Make a Dashboard
+
+```{r}
+(Speak_Now_Cloud + Reputation_Cloud)/(Speak_Now_Song_Sent+Reputation_Song_Sent)/(Sentiment_Comp+Compare_Traits) + plot_layout(heights = c(1, 1, 1))
+
+```
