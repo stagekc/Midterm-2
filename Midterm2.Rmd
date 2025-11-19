@@ -1,0 +1,152 @@
+---
+title: "Midterm 2"
+author: "Kelly Stage"
+date: "11/19/2025"
+output: 
+  prettydoc::html_pretty:
+    toc: true
+    theme: cayman
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidytext)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(ggthemes)
+library(maps)
+library(patchwork)
+```
+
+### Load Consumption Data
+
+```{r}
+consumption <- read.csv("per-capita-milk-consumption.csv")
+consumption <- consumption %>%
+    rename(consumption_per_capita = Milk.consumption..kilograms.per.year.per.capita.)
+  
+consumption_2000 <- consumption %>%
+  filter(Year == 2000) %>%
+  select(-Code) %>%
+  mutate(Entity = recode(Entity,
+                         "United States" = "USA",
+                         "Congo" = "Democratic Republic of the Congo",
+                         "Czechia" = "Czech Republic",
+                         "Côte d'Ivoire" = "Ivory Coast",
+                         "Eswatini"= "Swaziland",
+                         "United Kingdom" = "UK"))
+```
+
+### Load Production Data
+
+```{r}
+production <- read.csv("milk-production-tonnes.csv")
+production <- production %>%
+  rename(production_tonnes = Milk.Production..tonnes.)
+
+
+production_2000 <- production %>%
+  filter(Year == 2000) %>%
+  mutate(Entity = recode(Entity,
+                         "United States" = "USA",
+                         "Congo" = "Democratic Republic of the Congo",
+                         "Czechia" = "Czech Republic",
+                         "Côte d'Ivoire" = "Ivory Coast",
+                         "Eswatini"= "Swaziland",
+                         "United Kingdom" = "UK"))
+
+```
+
+
+```{r}
+world_map<- map_data("world")
+
+world_consumption_2000 <- consumption_2000 %>%
+  full_join(world_map, by = c("Entity"= "region"))
+
+world_production_2000 <- production_2000 %>%
+  full_join(world_map, by = c("Entity"= "region"))
+
+```
+
+### Maps
+
+```{r}
+consumption_2000_map <- ggplot(world_consumption_2000, aes(x=long, y=lat, group=group) ) +
+  geom_polygon(aes(fill=consumption_per_capita), color="gray30") + 
+  theme_map() +
+  theme(legend.position = "bottom") +
+  scale_fill_gradient2(low="blue3", high="red3",
+                       midpoint = 300, limits=c(0,700)) +
+    labs(title="Milk Consumption Per Capita in 2000",
+       fill="Milk Consumption Per Capita (kilograms)")
+
+production_2000_map<- ggplot(world_production_2000, aes(x=long, y=lat, group=group) ) +
+  geom_polygon(aes(fill=production_tonnes), color="gray30") + 
+  theme_map() +
+  theme(legend.position = "bottom") +
+  scale_fill_gradient2(low="blue3", high="red3",
+                       midpoint = 35000000, limits=c(0,100000000)) +
+    labs(title="Milk Production in 2000",
+       fill="Milk Production in Tonnes")
+```
+
+### Change over time
+
+```{r}
+max_producers <- production_2000 %>%
+  filter(Entity != "World",
+         Code != "") %>% # get countries not world/continent
+  slice_max(order_by = production_tonnes, n=5)
+
+production_min_max <- production %>%
+  filter(Entity %in% c("India","United States","Germany","Pakistan","World"))
+
+production_time <- ggplot(production_min_max) + 
+  geom_line(aes(x= Year, y=production_tonnes, color = Entity))+
+  labs(title = "Production of Milk (1961-2021",
+       color = "Country/Region",
+       y = "Tonnes of Milk")
+
+```
+
+### Relationship between production and consumption
+
+```{r}
+combined <- full_join(consumption, production, by = c("Entity","Code","Year")) 
+combined_2000 <- combined %>%
+  filter(Year == 2000, Code != "", Entity != "World")
+
+
+combined_max_production <-combined_2000 %>%
+  slice_max(order_by = production_tonnes)
+
+combined_max_consumption <- combined_2000 %>%
+  slice_max(order_by = consumption_per_capita)
+
+comparison<- ggplot(combined_2000, aes(x=consumption_per_capita, y=production_tonnes)) +
+  geom_point(aes(x=consumption_per_capita, y=production_tonnes)) +
+  geom_point(data = combined_max_production, 
+             aes(x=consumption_per_capita, y=production_tonnes),
+             color = "red") +
+  geom_point(data = combined_max_consumption,
+             aes(x=consumption_per_capita, y=production_tonnes),
+             color = "blue") +
+  geom_text(data = combined_max_production, aes(label = "India"), vjust = 1.5, color = "red")+
+  geom_text(data = combined_max_consumption, aes(label = "Netherlands"), vjust = -1, color = "blue") +
+  labs(title = "Milk Production vs Consumption",
+       x = "Milk Consumption per Capita (kilograms)",
+       y = "Milk Production (tonnes)")
+```
+
+### Dashboard
+
+
+```{r}
+(consumption_2000_map + production_2000_map) / (comparison + production_time)
+```
